@@ -31,6 +31,10 @@ dependencies:
   local_auth: ^2.3.0
   file_selector: ^1.0.3
 
+  # Thông báo nhắc giờ vào ca / ra ca (có chuông báo thức)
+  flutter_local_notifications: ^19.0.0
+  timezone: ^0.10.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

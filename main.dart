@@ -5,7 +5,22 @@ import 'dart:math' as math;
 import 'dart:ui' show FontFeature;
 
 import 'package:excel/excel.dart' as xl;
-import 'package:file_selector/file_selector.dart' show openFile;
+import 'package:file_selector/file_selector.dart' show XTypeGroup, openFile;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'
+    show
+        AndroidFlutterLocalNotificationsPlugin,
+        AndroidInitializationSettings,
+        AndroidNotificationCategory,
+        AndroidNotificationDetails,
+        AndroidScheduleMode,
+        AudioAttributesUsage,
+        FlutterLocalNotificationsPlugin,
+        Importance,
+        InitializationSettings,
+        NotificationDetails,
+        NotificationVisibility,
+        Priority,
+        UriAndroidNotificationSound;
 import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/material.dart' as mat show Text;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData, rootBundle;
@@ -18,6 +33,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -213,6 +229,51 @@ const _enExact = <String, String>{
   'Tác giả dự án: Trung Nguyen': 'Project author: Trung Nguyen',
   'Với sự hỗ trợ code của AI: Claude - Sonnet': 'Code assisted by AI: Claude - Sonnet',
   'Điện thoại liên hệ: 408-455-0327': 'Contact phone: 408-455-0327',
+  // — Nhắc giờ vào ca / ra ca —
+  'Nhắc giờ vào ca / ra ca': 'Shift reminders',
+  'Chuông báo giờ vào ca và ra ca': 'Alarm for shift start and end times',
+  'Nhắc ca làm': 'Shift reminder',
+  'Đến giờ vào ca': 'Time to start your shift',
+  'Đến giờ ra ca': 'Time to end your shift',
+  'Đừng quên bấm "Vào ca" để chấm công.': 'Remember to tap "Start shift" to clock in.',
+  'Đừng quên bấm "Ra ca" để lưu ca làm.': 'Remember to tap "End shift" to save your shift.',
+  'Đây là thông báo thử. Nếu nghe chuông, nhắc giờ đã hoạt động.':
+      'This is a test notification. If you hear the alarm, reminders are working.',
+  'Nhắc vào ca': 'Start reminder',
+  'Nhắc ra ca': 'End reminder',
+  'Lặp lại vào các ngày': 'Repeat on',
+  'Gửi thông báo thử': 'Send a test notification',
+  'Chưa được cấp quyền thông báo. Hãy bật thông báo cho ứng dụng trong Cài đặt Android.':
+      'Notification permission was not granted. Enable notifications for the app in Android Settings.',
+  'Thông báo hiện trên thanh trạng thái và phát chuông báo thức, kể cả khi đã tắt ứng dụng. Nếu không nghe chuông, hãy kiểm tra âm lượng báo thức, cho phép thông báo và không hạn chế pin cho ứng dụng trong Cài đặt Android. Lịch nhắc được làm mới mỗi khi bạn mở ứng dụng (đặt trước tối đa 30 ngày).':
+      'Reminders appear in the status bar and play an alarm sound, even when the app is closed. If you hear nothing, check the alarm volume, allow notifications and do not restrict battery for the app in Android Settings. The schedule is refreshed every time you open the app (set up to 30 days ahead).',
+  'Nhắc giờ chỉ hoạt động trong app Android (bản đầy đủ), không dùng được trên DartPad.':
+      'Reminders only work in the full Android app, not on DartPad.',
+  // — Ảnh đại diện —
+  'Ảnh đại diện': 'Profile photo',
+  'Chọn ảnh từ điện thoại': 'Choose a photo from your phone',
+  'Đổi ảnh': 'Change photo',
+  'Xóa ảnh': 'Remove photo',
+  'Xóa ảnh đại diện?': 'Remove the profile photo?',
+  'Ảnh sẽ được gỡ khỏi ứng dụng.': 'The photo will be removed from the app.',
+  'Chọn ảnh chỉ có trong bản app đầy đủ.': 'Choosing a photo is only in the full app.',
+  // — Lịch sử & so sánh —
+  'Tổng kết': 'Summary',
+  'Chọn khoảng ngày': 'Select date range',
+  'Áp dụng': 'Apply',
+  'Xem tất cả': 'View all',
+  'So sánh thu nhập': 'Compare earnings',
+  'So sánh tuần, tháng hoặc năm với một kỳ khác': 'Compare a week, month or year with another period',
+  'Kỳ A': 'Period A',
+  'Kỳ B': 'Period B',
+  'Chênh lệch': 'Difference',
+  'Lương': 'Pay',
+  'Tháng': 'Month',
+  'Năm': 'Year',
+  'Chọn một ngày trong tuần cần xem': 'Pick any day in the week',
+  'Đổi chỗ hai kỳ': 'Swap the two periods',
+  'Hai kỳ đang giống nhau, hãy chọn kỳ khác để so sánh.':
+      'Both periods are the same. Pick a different period to compare.',
 };
 
 final _enRules = <(RegExp, String Function(RegExpMatch))>[
@@ -280,6 +341,9 @@ final _enRules = <(RegExp, String Function(RegExpMatch))>[
   (RegExp(r'^Không thể nhập: ([\s\S]*)$'), (RegExpMatch m) => 'Could not import: ${m[1]}'),
   (RegExp(r'^Không thể xuất file sao lưu: ([\s\S]*)$'),
       (RegExpMatch m) => 'Could not export the backup file: ${m[1]}'),
+  (RegExp(r'^Tháng (\d{2}/\d{4})$'), (RegExpMatch m) => 'Month ${m[1]}'),
+  (RegExp(r'^Năm (\d{4})$'), (RegExpMatch m) => 'Year ${m[1]}'),
+  (RegExp(r'^Không thể chọn ảnh: ([\s\S]*)$'), (RegExpMatch m) => 'Could not choose the photo: ${m[1]}'),
 ];
 
 String tr(String s) {
@@ -881,20 +945,49 @@ class AppDatabase {
 }
 
 class AppSettings {
-  const AppSettings({this.hourlyRate = kDefaultRate, this.holidays = const {}, this.lang = 'vi'});
+  const AppSettings({
+    this.hourlyRate = kDefaultRate,
+    this.holidays = const {},
+    this.lang = 'vi',
+    this.reminders = const ReminderConfig(),
+  });
   final double hourlyRate;
   final Set<String> holidays; // 'yyyy-MM-dd'
   final String lang; // 'vi' hoặc 'en'
+  final ReminderConfig reminders;
 
   /// Quy tắc cố định: tuần làm việc bắt đầu từ thứ 2.
   int get weekStart => DateTime.monday;
 
+  AppSettings copyWith({
+    double? hourlyRate,
+    Set<String>? holidays,
+    String? lang,
+    ReminderConfig? reminders,
+  }) =>
+      AppSettings(
+        hourlyRate: hourlyRate ?? this.hourlyRate,
+        holidays: holidays ?? this.holidays,
+        lang: lang ?? this.lang,
+        reminders: reminders ?? this.reminders,
+      );
+
   static Future<AppSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
+    final days = (prefs.getStringList('rem_days') ?? const <String>['1', '2', '3', '4', '5'])
+        .map(int.tryParse)
+        .whereType<int>()
+        .where((d) => d >= 1 && d <= 7)
+        .toSet();
     return AppSettings(
       hourlyRate: prefs.getDouble('hourlyRate') ?? kDefaultRate,
       holidays: (prefs.getStringList('holidays') ?? const <String>[]).toSet(),
       lang: supportedLangs.containsKey(prefs.getString('lang')) ? prefs.getString('lang')! : 'vi',
+      reminders: ReminderConfig(
+        startMin: prefs.getInt('rem_start'),
+        endMin: prefs.getInt('rem_end'),
+        days: days.isEmpty ? const {1, 2, 3, 4, 5} : days,
+      ),
     );
   }
 
@@ -903,6 +996,19 @@ class AppSettings {
     await prefs.setDouble('hourlyRate', hourlyRate);
     await prefs.setStringList('holidays', holidays.toList()..sort());
     await prefs.setString('lang', lang);
+    final st = reminders.startMin;
+    final en = reminders.endMin;
+    if (st == null) {
+      await prefs.remove('rem_start');
+    } else {
+      await prefs.setInt('rem_start', st);
+    }
+    if (en == null) {
+      await prefs.remove('rem_end');
+    } else {
+      await prefs.setInt('rem_end', en);
+    }
+    await prefs.setStringList('rem_days', (reminders.days.toList()..sort()).map((d) => '$d').toList());
   }
 }
 
@@ -1341,12 +1447,14 @@ class BackupData {
     required this.holidays,
     required this.lang,
     required this.exportedAt,
+    this.reminders = const ReminderConfig(),
   });
   final List<WorkRecord> records;
   final double hourlyRate;
   final Set<String> holidays;
   final String lang;
   final DateTime exportedAt;
+  final ReminderConfig reminders;
 
   static const _appId = 'theo_doi_luong';
   static const _format = 1;
@@ -1359,6 +1467,7 @@ class BackupData {
           'hourlyRate': hourlyRate,
           'holidays': holidays.toList()..sort(),
           'lang': lang,
+          'reminders': reminders.toJson(),
         },
         'records': [
           for (final r in records)
@@ -1431,6 +1540,7 @@ class BackupData {
         hourlyRate: rate,
         holidays: holidays,
         lang: lang,
+        reminders: ReminderConfig.fromJson(settings['reminders']),
         exportedAt: (ea is String ? DateTime.tryParse(ea) : null) ?? DateTime.now(),
       );
     } on FormatException {
@@ -1458,6 +1568,296 @@ class BackupData {
   }
   return (add: add, skipped: skipped);
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Nhắc giờ, ảnh đại diện, kỳ so sánh
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Cấu hình nhắc giờ: giờ vào ca / ra ca (phút trong ngày, null = tắt) và các thứ lặp lại.
+class ReminderConfig {
+  const ReminderConfig({this.startMin, this.endMin, this.days = const {1, 2, 3, 4, 5}});
+  final int? startMin;
+  final int? endMin;
+  final Set<int> days; // 1 = thứ 2 ... 7 = chủ nhật
+
+  bool get anyEnabled => (startMin != null || endMin != null) && days.isNotEmpty;
+
+  /// Dùng để biết khi nào cần đặt lại lịch thông báo.
+  String get signature => '$startMin|$endMin|${(days.toList()..sort()).join(',')}';
+
+  ReminderConfig copyWith({
+    int? startMin,
+    int? endMin,
+    Set<int>? days,
+    bool clearStart = false,
+    bool clearEnd = false,
+  }) =>
+      ReminderConfig(
+        startMin: clearStart ? null : (startMin ?? this.startMin),
+        endMin: clearEnd ? null : (endMin ?? this.endMin),
+        days: days ?? this.days,
+      );
+
+  Map<String, Object?> toJson() => {
+        'start': startMin,
+        'end': endMin,
+        'days': (days.toList()..sort()),
+      };
+
+  static ReminderConfig fromJson(Object? raw) {
+    if (raw is! Map) return const ReminderConfig();
+    int? minutes(Object? v) => (v is int && v >= 0 && v < 1440) ? v : null;
+    final d = raw['days'];
+    final days = <int>{
+      if (d is List)
+        for (final x in d)
+          if (x is int && x >= 1 && x <= 7) x,
+    };
+    return ReminderConfig(
+      startMin: minutes(raw['start']),
+      endMin: minutes(raw['end']),
+      days: days.isEmpty ? const {1, 2, 3, 4, 5} : days,
+    );
+  }
+}
+
+// <PLATFORM:NOTIFY>
+/// Đặt được thông báo nhắc giờ hay không (chỉ có trong app Android đầy đủ).
+const kHasReminders = true;
+
+/// Đặt lịch thông báo có chuông (flutter_local_notifications).
+class ReminderService {
+  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  bool _ready = false;
+
+  Future<void> _init() async {
+    if (_ready) return;
+    await _plugin.initialize(
+      const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
+    );
+    _ready = true;
+  }
+
+  AndroidFlutterLocalNotificationsPlugin? get _android =>
+      _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
+  /// Xin quyền hiện thông báo (Android 13 trở lên). Trả về true nếu được phép.
+  Future<bool> requestPermission() async {
+    try {
+      await _init();
+      return await _android?.requestNotificationsPermission() ?? true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  NotificationDetails _details() => NotificationDetails(
+        android: AndroidNotificationDetails(
+          'shift_reminders',
+          tr('Nhắc giờ vào ca / ra ca'),
+          channelDescription: tr('Chuông báo giờ vào ca và ra ca'),
+          importance: Importance.max,
+          priority: Priority.high,
+          category: AndroidNotificationCategory.alarm,
+          audioAttributesUsage: AudioAttributesUsage.alarm,
+          sound: const UriAndroidNotificationSound('content://settings/system/alarm_alert'),
+          playSound: true,
+          enableVibration: true,
+          visibility: NotificationVisibility.public,
+        ),
+      );
+
+  Future<void> showTest() async {
+    await _init();
+    await _plugin.show(
+      999,
+      tr('Nhắc ca làm'),
+      tr('Đây là thông báo thử. Nếu nghe chuông, nhắc giờ đã hoạt động.'),
+      _details(),
+    );
+  }
+
+  Future<void> _schedule(int id, String title, String body, DateTime at, AndroidScheduleMode mode) async {
+    // Đổi giờ địa phương sang cùng thời điểm theo UTC: không cần cơ sở dữ liệu múi giờ.
+    final when = tz.TZDateTime.from(at, tz.UTC);
+    try {
+      await _plugin.zonedSchedule(id, title, body, when, _details(), androidScheduleMode: mode);
+    } catch (_) {
+      // Thiếu quyền báo thức chính xác: dùng chế độ gần đúng thay vì bỏ lỡ.
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        when,
+        _details(),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      );
+    }
+  }
+
+  /// Đặt lại toàn bộ lịch nhắc cho 30 ngày tới. Trả về số thông báo đã đặt.
+  Future<int> sync(ReminderConfig cfg) async {
+    await _init();
+    await _plugin.cancelAll();
+    if (!cfg.anyEnabled) return 0;
+
+    var mode = AndroidScheduleMode.exactAllowWhileIdle;
+    try {
+      if (await _android?.canScheduleExactNotifications() == false) {
+        mode = AndroidScheduleMode.inexactAllowWhileIdle;
+      }
+    } catch (_) {}
+
+    final slots = [
+      (cfg.startMin, tr('Đến giờ vào ca'), tr('Đừng quên bấm "Vào ca" để chấm công.')),
+      (cfg.endMin, tr('Đến giờ ra ca'), tr('Đừng quên bấm "Ra ca" để lưu ca làm.')),
+    ];
+    final now = DateTime.now();
+    var id = 1;
+    for (var i = 0; i < 30; i++) {
+      final day = DateTime(now.year, now.month, now.day + i);
+      if (!cfg.days.contains(day.weekday)) continue;
+      for (final (minutes, title, body) in slots) {
+        if (minutes == null) continue;
+        final at = DateTime(day.year, day.month, day.day, minutes ~/ 60, minutes % 60);
+        if (!at.isAfter(now)) continue;
+        await _schedule(id++, title, body, at, mode);
+      }
+    }
+    return id - 1;
+  }
+}
+// </PLATFORM:NOTIFY>
+
+// <PLATFORM:AVATAR>
+/// Chọn được ảnh đại diện từ bộ nhớ máy hay không.
+const kHasAvatarPicker = true;
+
+/// Lưu ảnh đại diện: chép ảnh vào thư mục riêng của ứng dụng và nhớ đường dẫn.
+class AvatarStore {
+  Future<ImageProvider?> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final path = prefs.getString('avatar_path');
+    if (path == null) return null;
+    final file = File(path);
+    if (!await file.exists()) return null;
+    return ResizeImage(FileImage(file), width: 256);
+  }
+
+  /// Mở bộ chọn ảnh của hệ thống. Trả về null nếu người dùng hủy.
+  Future<ImageProvider?> pick() async {
+    final picked = await openFile(
+      acceptedTypeGroups: const [XTypeGroup(label: 'images', mimeTypes: ['image/*'])],
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    if (bytes.isEmpty) return null;
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, 'avatar_${DateTime.now().millisecondsSinceEpoch}.jpg'));
+    await file.writeAsBytes(bytes, flush: true);
+    final prefs = await SharedPreferences.getInstance();
+    final old = prefs.getString('avatar_path');
+    await prefs.setString('avatar_path', file.path);
+    if (old != null && old != file.path) {
+      try {
+        await File(old).delete();
+      } catch (_) {}
+    }
+    return ResizeImage(FileImage(file), width: 256);
+  }
+
+  Future<void> remove() async {
+    final prefs = await SharedPreferences.getInstance();
+    final old = prefs.getString('avatar_path');
+    await prefs.remove('avatar_path');
+    if (old != null) {
+      try {
+        await File(old).delete();
+      } catch (_) {}
+    }
+  }
+}
+// </PLATFORM:AVATAR>
+
+class AvatarController extends ChangeNotifier {
+  AvatarController(this._store);
+  final AvatarStore _store;
+  ImageProvider? image;
+
+  Future<void> load() async {
+    try {
+      image = await _store.load();
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// Trả về thông báo lỗi, hoặc null nếu thành công / người dùng hủy.
+  Future<String?> pick() async {
+    try {
+      final img = await _store.pick();
+      if (img != null) {
+        image = img;
+        notifyListeners();
+      }
+      return null;
+    } catch (e) {
+      return 'Không thể chọn ảnh: $e';
+    }
+  }
+
+  Future<void> remove() async {
+    try {
+      await _store.remove();
+    } catch (_) {}
+    image = null;
+    notifyListeners();
+  }
+}
+
+// ── Kỳ thời gian (tuần / tháng / năm) cho phần so sánh ──────────────────────
+
+enum CompareKind { week, month, year }
+
+/// (từ, đến) với đến là mốc không bao gồm.
+(DateTime, DateTime) periodBounds(CompareKind k, DateTime anchor) {
+  switch (k) {
+    case CompareKind.week:
+      final w = startOfWeek(anchor, DateTime.monday);
+      return (w, DateTime(w.year, w.month, w.day + 7));
+    case CompareKind.month:
+      return (DateTime(anchor.year, anchor.month), DateTime(anchor.year, anchor.month + 1));
+    case CompareKind.year:
+      return (DateTime(anchor.year), DateTime(anchor.year + 1));
+  }
+}
+
+DateTime shiftPeriod(CompareKind k, DateTime anchor, int delta) {
+  switch (k) {
+    case CompareKind.week:
+      return DateTime(anchor.year, anchor.month, anchor.day + 7 * delta);
+    case CompareKind.month:
+      return DateTime(anchor.year, anchor.month + delta);
+    case CompareKind.year:
+      return DateTime(anchor.year + delta);
+  }
+}
+
+String periodTitle(CompareKind k, DateTime anchor) {
+  final b = periodBounds(k, anchor);
+  switch (k) {
+    case CompareKind.week:
+      final sun = DateTime(b.$1.year, b.$1.month, b.$1.day + 6);
+      return 'Tuần ${_two(b.$1.day)}/${_two(b.$1.month)} – ${_two(sun.day)}/${_two(sun.month)}/${sun.year}';
+    case CompareKind.month:
+      return 'Tháng ${_two(anchor.month)}/${anchor.year}';
+    case CompareKind.year:
+      return 'Năm ${anchor.year}';
+  }
+}
+
+List<String> get _monthShort => currentLang == 'en'
+    ? const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    : const ['Th1', 'Th2', 'Th3', 'Th4', 'Th5', 'Th6', 'Th7', 'Th8', 'Th9', 'Th10', 'Th11', 'Th12'];
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Controller (toàn bộ logic nghiệp vụ, UI chỉ lắng nghe)
@@ -1609,6 +2009,7 @@ class AppController extends ChangeNotifier {
         hourlyRate: settings.hourlyRate,
         holidays: Set<String>.of(settings.holidays),
         lang: settings.lang,
+        reminders: settings.reminders,
         exportedAt: DateTime.now(),
       );
 
@@ -1620,12 +2021,13 @@ class AppController extends ChangeNotifier {
       await _db.insertAll(plan.add);
     }
     settings = replace
-        ? AppSettings(hourlyRate: d.hourlyRate, holidays: Set<String>.of(d.holidays), lang: d.lang)
-        : AppSettings(
-            hourlyRate: settings.hourlyRate,
-            holidays: {...settings.holidays, ...d.holidays},
-            lang: settings.lang,
-          );
+        ? settings.copyWith(
+            hourlyRate: d.hourlyRate,
+            holidays: Set<String>.of(d.holidays),
+            lang: d.lang,
+            reminders: d.reminders,
+          )
+        : settings.copyWith(holidays: {...settings.holidays, ...d.holidays});
     await settings.save();
     await _recalculate(await _db.getAll());
     return (added: plan.add.length, skipped: plan.skipped);
@@ -2021,13 +2423,37 @@ class SalaryApp extends StatefulWidget {
 class _SalaryAppState extends State<SalaryApp> with WidgetsBindingObserver {
   final _controller = AppController(AppDatabase.instance);
   final _lock = AppLock(LockStore(), Biometrics());
+  final _reminders = ReminderService();
+  final _avatar = AvatarController(AvatarStore());
+  String _reminderSig = '';
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _controller.addListener(_onControllerChanged);
     _controller.load();
     _lock.load();
+    _avatar.load();
+  }
+
+  /// Đặt lại lịch nhắc khi đổi giờ, thứ lặp lại hoặc ngôn ngữ (nội dung thông báo).
+  void _onControllerChanged() {
+    if (_controller.loading) return;
+    final sig = '${_controller.settings.reminders.signature}|${_controller.settings.lang}';
+    if (sig != _reminderSig) {
+      _reminderSig = sig;
+      _syncReminders();
+    }
+  }
+
+  Future<void> _syncReminders() async {
+    currentLang = _controller.settings.lang;
+    try {
+      await _reminders.sync(_controller.settings.reminders);
+    } catch (_) {
+      // Không cho thông báo lỗi làm hỏng ứng dụng.
+    }
   }
 
   @override
@@ -2036,14 +2462,17 @@ class _SalaryAppState extends State<SalaryApp> with WidgetsBindingObserver {
       _lock.onPaused();
     } else if (state == AppLifecycleState.resumed) {
       _lock.onResumed();
+      if (!_controller.loading) _syncReminders(); // làm mới lịch cho 30 ngày tới
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _lock.dispose();
+    _avatar.dispose();
     super.dispose();
   }
 
@@ -2081,7 +2510,7 @@ class _SalaryAppState extends State<SalaryApp> with WidgetsBindingObserver {
           ),
         ),
         builder: (context, child) => LockGate(lock: _lock, child: child ?? const SizedBox.shrink()),
-        home: HomePage(c: _controller, lock: _lock),
+        home: HomePage(c: _controller, lock: _lock, reminders: _reminders, avatar: _avatar),
       );
 }
 
@@ -2112,9 +2541,17 @@ Future<bool> confirmDialog(
 }
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.c, required this.lock});
+  const HomePage({
+    super.key,
+    required this.c,
+    required this.lock,
+    required this.reminders,
+    required this.avatar,
+  });
   final AppController c;
   final AppLock lock;
+  final ReminderService reminders;
+  final AvatarController avatar;
 
   @override
   Widget build(BuildContext context) {
@@ -2153,18 +2590,6 @@ class HomePage extends StatelessWidget {
         final month = summarize(records, DateTime(now.year, now.month), DateTime(now.year, now.month + 1));
         final year = summarize(records, DateTime(now.year), DateTime(now.year + 1));
 
-        // Gộp lịch sử theo tuần: DateTime = tiêu đề tuần, WorkRecord = ca làm.
-        final items = <Object>[];
-        DateTime? currentWeek;
-        for (final r in records) {
-          final w = startOfWeek(r.start, DateTime.monday);
-          if (currentWeek != w) {
-            currentWeek = w;
-            items.add(w);
-          }
-          items.add(r);
-        }
-
         return Scaffold(
           floatingActionButton: FloatingActionButton.extended(
             onPressed: () => _editRecord(context),
@@ -2177,6 +2602,11 @@ class HomePage extends StatelessWidget {
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 SliverAppBar.large(
+                  leadingWidth: 68,
+                  leading: Padding(
+                    padding: const EdgeInsets.only(left: 16),
+                    child: Center(child: AvatarButton(avatar: avatar, onTap: () => _openAvatar(context))),
+                  ),
                   title: const Text('Theo dõi lương', style: TextStyle(fontWeight: FontWeight.w700)),
                   actions: [
                     IconButton(
@@ -2258,47 +2688,12 @@ class HomePage extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Lịch sử ca làm',
-                                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                            Text('${records.length} ca', style: const TextStyle(color: _muted)),
-                          ],
-                        ),
+                        CompareTile(onOpen: () => _openCompare(context)),
+                        HistoryPreviewCard(records: records, onOpen: () => _openHistory(context)),
                       ],
                     ),
                   ),
                 ),
-                if (records.isEmpty)
-                  SliverToBoxAdapter(child: _EmptyState(onAdd: () => _editRecord(context)))
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverList.builder(
-                      itemCount: items.length,
-                      itemBuilder: (context, i) {
-                        final it = items[i];
-                        if (it is DateTime) {
-                          return WeekHeader(
-                            monday: it,
-                            summary: summarize(records, it, DateTime(it.year, it.month, it.day + 7)),
-                          );
-                        }
-                        final r = it as WorkRecord;
-                        return RecordTile(
-                          key: ValueKey(r.id),
-                          record: r,
-                          onTap: () => _editRecord(context, r),
-                          onDelete: () => _deleteRecord(context, r),
-                        );
-                      },
-                    ),
-                  ),
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(20, 16, 20, 100),
@@ -2400,6 +2795,8 @@ class HomePage extends StatelessWidget {
         await _openSecurity(context);
       case SettingsNext.backup:
         await _openBackup(context);
+      case SettingsNext.reminders:
+        await _openReminders(context);
       case SettingsNext.about:
         await _openAbout(context);
       case null:
@@ -2423,6 +2820,56 @@ class HomePage extends StatelessWidget {
           onImportFile: kHasFilePicker ? () => _importFromFile(context) : null,
           onImportPaste: () => _importFromText(context),
         ),
+      );
+
+  Future<void> _openReminders(BuildContext context) => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (_) => ReminderSheet(c: c, service: reminders),
+      );
+
+  Future<void> _openAvatar(BuildContext context) => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (_) => AvatarSheet(
+          avatar: avatar,
+          onPick: () => _pickAvatar(context),
+          onRemove: () => _removeAvatar(context),
+        ),
+      );
+
+  Future<void> _pickAvatar(BuildContext context) async {
+    if (!kHasAvatarPicker) {
+      _toast(context, 'Chọn ảnh chỉ có trong bản app đầy đủ.');
+      return;
+    }
+    final err = await lock.runExternal(avatar.pick);
+    if (err != null && context.mounted) _toast(context, err);
+  }
+
+  Future<void> _removeAvatar(BuildContext context) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'Xóa ảnh đại diện?',
+      message: 'Ảnh sẽ được gỡ khỏi ứng dụng.',
+      action: 'Xóa ảnh',
+    );
+    if (ok) await avatar.remove();
+  }
+
+  Future<void> _openHistory(BuildContext context) => Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => HistoryPage(
+            c: c,
+            onEdit: (ctx, r) => _editRecord(ctx, r),
+            onDelete: (ctx, r) => _deleteRecord(ctx, r),
+          ),
+        ),
+      );
+
+  Future<void> _openCompare(BuildContext context) => Navigator.of(context).push<void>(
+        MaterialPageRoute(builder: (_) => ComparePage(c: c)),
       );
 
   Future<void> _openAbout(BuildContext context) => showDialog<void>(
@@ -3161,37 +3608,6 @@ class RecordTile extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onAdd});
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
-        child: Column(
-          spacing: 10,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(color: _tealMid.withValues(alpha: 0.1), shape: BoxShape.circle),
-              child: const Icon(Icons.event_note_rounded, size: 36, color: _tealMid),
-            ),
-            const Text('Chưa có ca làm nào', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-            const Text(
-              'Bấm “Vào ca” để chấm công hoặc thêm một ca thủ công.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: _muted),
-            ),
-            OutlinedButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Thêm ca'),
-            ),
-          ],
-        ),
-      );
-}
-
 class _Pill extends StatelessWidget {
   const _Pill(this.text, {required this.color});
   final String text;
@@ -3273,7 +3689,7 @@ class _StartShiftDialogState extends State<StartShiftDialog> {
 
 // ── Khóa ứng dụng: màn hình & hộp thoại ─────────────────────────────────────
 
-enum SettingsNext { security, backup, about }
+enum SettingsNext { security, backup, reminders, about }
 
 /// Phủ màn hình khóa lên trên toàn bộ ứng dụng (kể cả hộp thoại đang mở).
 class LockGate extends StatelessWidget {
@@ -4008,6 +4424,974 @@ class AboutDialogView extends StatelessWidget {
       );
 }
 
+// ── Ảnh đại diện ────────────────────────────────────────────────────────────
+
+class AvatarButton extends StatelessWidget {
+  const AvatarButton({super.key, required this.avatar, required this.onTap});
+  final AvatarController avatar;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: avatar,
+        builder: (context, _) => InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _tealMid, width: 2)),
+            child: CircleAvatar(
+              radius: 20,
+              backgroundColor: _tealMid.withValues(alpha: 0.12),
+              backgroundImage: avatar.image,
+              child: avatar.image == null ? const Icon(Icons.person_rounded, color: _tealMid) : null,
+            ),
+          ),
+        ),
+      );
+}
+
+class AvatarSheet extends StatelessWidget {
+  const AvatarSheet({super.key, required this.avatar, required this.onPick, required this.onRemove});
+  final AvatarController avatar;
+  final VoidCallback onPick, onRemove;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: avatar,
+        builder: (context, _) {
+          final has = avatar.image != null;
+          void run(VoidCallback action) {
+            Navigator.pop(context);
+            action();
+          }
+
+          return SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 8,
+                children: [
+                  Center(
+                    child: CircleAvatar(
+                      radius: 52,
+                      backgroundColor: _tealMid.withValues(alpha: 0.12),
+                      backgroundImage: avatar.image,
+                      child: has ? null : const Icon(Icons.person_rounded, size: 52, color: _tealMid),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Center(
+                    child: Text('Ảnh đại diện', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  ),
+                  _NavTile(
+                    icon: Icons.photo_library_outlined,
+                    title: has ? 'Đổi ảnh' : 'Chọn ảnh từ điện thoại',
+                    onTap: () => run(onPick),
+                  ),
+                  if (has)
+                    _NavTile(icon: Icons.delete_outline_rounded, title: 'Xóa ảnh', onTap: () => run(onRemove)),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+}
+
+// ── Nhắc giờ vào ca / ra ca ─────────────────────────────────────────────────
+
+class _AlarmRow extends StatelessWidget {
+  const _AlarmRow({
+    required this.icon,
+    required this.title,
+    required this.minutes,
+    required this.onToggle,
+    required this.onPickTime,
+  });
+  final IconData icon;
+  final String title;
+  final int? minutes;
+  final ValueChanged<bool> onToggle;
+  final VoidCallback onPickTime;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = minutes != null;
+    final text = on ? '${_two(minutes! ~/ 60)}:${_two(minutes! % 60)}' : '--:--';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: _tealMid.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+              child: Icon(icon, color: _tealMid),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(color: _muted)),
+                  InkWell(
+                    onTap: onPickTime,
+                    child: Text(
+                      text,
+                      style: TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w300,
+                        color: on ? null : _muted,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(value: on, onChanged: onToggle),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ReminderSheet extends StatefulWidget {
+  const ReminderSheet({super.key, required this.c, required this.service});
+  final AppController c;
+  final ReminderService service;
+
+  @override
+  State<ReminderSheet> createState() => _ReminderSheetState();
+}
+
+class _ReminderSheetState extends State<ReminderSheet> {
+  String? _msg;
+  ReminderConfig get cfg => widget.c.settings.reminders;
+
+  Future<void> _apply(ReminderConfig next, {bool permission = false}) async {
+    if (permission && kHasReminders) {
+      final ok = await widget.service.requestPermission();
+      if (!ok && mounted) {
+        setState(() => _msg = 'Chưa được cấp quyền thông báo. Hãy bật thông báo cho ứng dụng trong Cài đặt Android.');
+      }
+    }
+    await widget.c.updateSettings(widget.c.settings.copyWith(reminders: next));
+  }
+
+  Future<void> _pickTime(bool isStart) async {
+    final current = (isStart ? cfg.startMin : cfg.endMin) ?? (isStart ? 8 * 60 : 17 * 60);
+    final t = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: current ~/ 60, minute: current % 60),
+    );
+    if (t == null) return;
+    final m = t.hour * 60 + t.minute;
+    await _apply(isStart ? cfg.copyWith(startMin: m) : cfg.copyWith(endMin: m), permission: true);
+  }
+
+  Future<void> _toggle(bool isStart, bool on) async {
+    if (on) {
+      final m = (isStart ? cfg.startMin : cfg.endMin) ?? (isStart ? 8 * 60 : 17 * 60);
+      await _apply(isStart ? cfg.copyWith(startMin: m) : cfg.copyWith(endMin: m), permission: true);
+    } else {
+      await _apply(isStart ? cfg.copyWith(clearStart: true) : cfg.copyWith(clearEnd: true));
+    }
+  }
+
+  Future<void> _toggleDay(int day, bool on) {
+    final d = Set<int>.of(cfg.days);
+    if (on) {
+      d.add(day);
+    } else {
+      d.remove(day);
+    }
+    return _apply(cfg.copyWith(days: d));
+  }
+
+  Future<void> _test() async {
+    final ok = await widget.service.requestPermission();
+    if (!ok) {
+      if (mounted) {
+        setState(() => _msg = 'Chưa được cấp quyền thông báo. Hãy bật thông báo cho ứng dụng trong Cài đặt Android.');
+      }
+      return;
+    }
+    await widget.service.showTest();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: widget.c,
+        builder: (context, _) => SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 10,
+              children: [
+                Text('Nhắc giờ vào ca / ra ca', style: Theme.of(context).textTheme.titleLarge),
+                if (!kHasReminders)
+                  const Text(
+                    'Nhắc giờ chỉ hoạt động trong app Android (bản đầy đủ), không dùng được trên DartPad.',
+                    style: TextStyle(color: _muted),
+                  ),
+                _AlarmRow(
+                  icon: Icons.login_rounded,
+                  title: 'Nhắc vào ca',
+                  minutes: cfg.startMin,
+                  onToggle: (v) => _toggle(true, v),
+                  onPickTime: () => _pickTime(true),
+                ),
+                _AlarmRow(
+                  icon: Icons.logout_rounded,
+                  title: 'Nhắc ra ca',
+                  minutes: cfg.endMin,
+                  onToggle: (v) => _toggle(false, v),
+                  onPickTime: () => _pickTime(false),
+                ),
+                const Text('Lặp lại vào các ngày', style: TextStyle(color: _muted)),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    for (var i = 1; i <= 7; i++)
+                      FilterChip(
+                        label: Text(_weekdayShort[i - 1]),
+                        selected: cfg.days.contains(i),
+                        onSelected: (v) => _toggleDay(i, v),
+                      ),
+                  ],
+                ),
+                if (_msg != null) Text(_msg!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                if (kHasReminders)
+                  OutlinedButton.icon(
+                    onPressed: _test,
+                    icon: const Icon(Icons.notifications_active_outlined),
+                    label: const Text('Gửi thông báo thử'),
+                  ),
+                const Text(
+                  'Thông báo hiện trên thanh trạng thái và phát chuông báo thức, kể cả khi đã tắt ứng dụng. '
+                  'Nếu không nghe chuông, hãy kiểm tra âm lượng báo thức, cho phép thông báo và không hạn chế '
+                  'pin cho ứng dụng trong Cài đặt Android. Lịch nhắc được làm mới mỗi khi bạn mở ứng dụng '
+                  '(đặt trước tối đa 30 ngày).',
+                  style: TextStyle(fontSize: 12, color: _muted, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+// ── Lịch sử ca làm (trang riêng, có lọc theo khoảng ngày) ──────────────────
+
+class _MetricCell extends StatelessWidget {
+  const _MetricCell(this.label, this.value);
+  final String label, value;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: _muted, fontSize: 12)),
+          const SizedBox(height: 2),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
+      );
+}
+
+class RangeSummaryCard extends StatelessWidget {
+  const RangeSummaryCard({super.key, required this.summary, required this.rangeText});
+  final PeriodSummary summary;
+  final String rangeText;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 10,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Tổng kết', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  ),
+                  Flexible(child: Text(rangeText, style: const TextStyle(color: _muted, fontSize: 12))),
+                ],
+              ),
+              Text(money(summary.earned), style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w700)),
+              Wrap(
+                spacing: 22,
+                runSpacing: 10,
+                children: [
+                  _MetricCell('Số ca', '${summary.shifts}'),
+                  _MetricCell('Tổng giờ', fmtHours(summary.total)),
+                  _MetricCell('Thường', fmtHours(summary.regular)),
+                  _MetricCell('OT x1.5', fmtHours(summary.ot)),
+                  _MetricCell('x2', fmtHours(summary.dbl)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+typedef RecordAction = void Function(BuildContext context, WorkRecord record);
+
+enum HistoryPreset { all, week, month, lastMonth, year, custom }
+
+class HistoryPage extends StatefulWidget {
+  const HistoryPage({super.key, required this.c, required this.onEdit, required this.onDelete});
+  final AppController c;
+  final RecordAction onEdit, onDelete;
+
+  @override
+  State<HistoryPage> createState() => _HistoryPageState();
+}
+
+class _HistoryPageState extends State<HistoryPage> {
+  HistoryPreset _preset = HistoryPreset.all;
+  DateTimeRange? _custom;
+
+  static const _presetLabels = {
+    HistoryPreset.all: 'Tất cả',
+    HistoryPreset.week: 'Tuần này',
+    HistoryPreset.month: 'Tháng này',
+    HistoryPreset.lastMonth: 'Tháng trước',
+    HistoryPreset.year: 'Năm nay',
+  };
+
+  /// (từ, đến) với đến là mốc không bao gồm; null = không lọc.
+  (DateTime, DateTime)? get _bounds {
+    final now = DateTime.now();
+    switch (_preset) {
+      case HistoryPreset.all:
+        return null;
+      case HistoryPreset.week:
+        return periodBounds(CompareKind.week, now);
+      case HistoryPreset.month:
+        return periodBounds(CompareKind.month, now);
+      case HistoryPreset.lastMonth:
+        return periodBounds(CompareKind.month, DateTime(now.year, now.month - 1));
+      case HistoryPreset.year:
+        return periodBounds(CompareKind.year, now);
+      case HistoryPreset.custom:
+        final r = _custom;
+        if (r == null) return null;
+        return (dateOnly(r.start), DateTime(r.end.year, r.end.month, r.end.day + 1));
+    }
+  }
+
+  Future<void> _pickRange() async {
+    final now = DateTime.now();
+    final r = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 2, 12, 31),
+      initialDateRange: _custom,
+      helpText: tr('Chọn khoảng ngày'),
+      saveText: tr('Áp dụng'),
+    );
+    if (r != null && mounted) {
+      setState(() {
+        _custom = r;
+        _preset = HistoryPreset.custom;
+      });
+    }
+  }
+
+  String _rangeText(List<WorkRecord> rs, (DateTime, DateTime)? b) {
+    if (b != null) {
+      final last = DateTime(b.$2.year, b.$2.month, b.$2.day - 1);
+      return '${_dmyFmt.format(b.$1)} – ${_dmyFmt.format(last)}';
+    }
+    if (rs.isEmpty) return '';
+    return '${_dmyFmt.format(rs.last.start)} – ${_dmyFmt.format(rs.first.start)}';
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: widget.c,
+        builder: (context, _) {
+          final all = widget.c.records;
+          final b = _bounds;
+          final rs = b == null
+              ? all
+              : [
+                  for (final r in all)
+                    if (!r.start.isBefore(b.$1) && r.start.isBefore(b.$2)) r
+                ];
+          final sum = summarize(rs, DateTime(1970), DateTime(3000));
+
+          // Gộp theo tuần: DateTime = tiêu đề tuần, WorkRecord = ca làm.
+          final items = <Object>[];
+          DateTime? currentWeek;
+          for (final r in rs) {
+            final w = startOfWeek(r.start, DateTime.monday);
+            if (currentWeek != w) {
+              currentWeek = w;
+              items.add(w);
+            }
+            items.add(r);
+          }
+
+          final customLabel = (_preset == HistoryPreset.custom && _custom != null)
+              ? '${_dmyFmt.format(_custom!.start)} – ${_dmyFmt.format(_custom!.end)}'
+              : 'Chọn khoảng ngày';
+
+          return Scaffold(
+            appBar: AppBar(title: const Text('Lịch sử ca làm')),
+            body: CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 12,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            for (final e in _presetLabels.entries)
+                              ChoiceChip(
+                                label: Text(e.value),
+                                selected: _preset == e.key,
+                                onSelected: (_) => setState(() => _preset = e.key),
+                              ),
+                            ChoiceChip(
+                              avatar: const Icon(Icons.date_range_rounded, size: 18),
+                              label: Text(customLabel),
+                              selected: _preset == HistoryPreset.custom,
+                              onSelected: (_) => _pickRange(),
+                            ),
+                          ],
+                        ),
+                        RangeSummaryCard(summary: sum, rangeText: _rangeText(rs, b)),
+                      ],
+                    ),
+                  ),
+                ),
+                if (rs.isEmpty)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: Text('Không có ca làm nào trong khoảng này.')),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverList.builder(
+                      itemCount: items.length,
+                      itemBuilder: (context, i) {
+                        final it = items[i];
+                        if (it is DateTime) {
+                          return WeekHeader(
+                            monday: it,
+                            summary: summarize(rs, it, DateTime(it.year, it.month, it.day + 7)),
+                          );
+                        }
+                        final r = it as WorkRecord;
+                        return RecordTile(
+                          key: ValueKey(r.id),
+                          record: r,
+                          onTap: () => widget.onEdit(context, r),
+                          onDelete: () => widget.onDelete(context, r),
+                        );
+                      },
+                    ),
+                  ),
+                const SliverToBoxAdapter(child: SizedBox(height: 40)),
+              ],
+            ),
+          );
+        },
+      );
+}
+
+/// Thẻ trên trang chủ: bấm vào để mở trang lịch sử đầy đủ.
+class HistoryPreviewCard extends StatelessWidget {
+  const HistoryPreviewCard({super.key, required this.records, required this.onOpen});
+  final List<WorkRecord> records;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final recent = records.take(3).toList();
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 10,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Lịch sử ca làm', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                  ),
+                  Text('${records.length} ca', style: const TextStyle(color: _muted)),
+                  const Icon(Icons.chevron_right_rounded, color: _muted),
+                ],
+              ),
+              if (recent.isEmpty)
+                const Text(
+                  'Bấm “Vào ca” để chấm công hoặc thêm một ca thủ công.',
+                  style: TextStyle(color: _muted),
+                )
+              else
+                for (final r in recent)
+                  Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: typeColor(r.dayType).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _weekdayShort[r.start.weekday - 1],
+                              style: TextStyle(fontSize: 10, color: typeColor(r.dayType)),
+                            ),
+                            Text(
+                              '${r.start.day}',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: typeColor(r.dayType),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '${_timeFmt.format(r.start)} – ${_timeFmt.format(r.end)}${r.overnight ? ' (+1)' : ''}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Text(money(r.earned), style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+              const Align(
+                alignment: Alignment.centerRight,
+                child: Text('Xem tất cả', style: TextStyle(color: _tealMid, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── So sánh thu nhập ────────────────────────────────────────────────────────
+
+class CompareTile extends StatelessWidget {
+  const CompareTile({super.key, required this.onOpen});
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onOpen,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              spacing: 12,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.compare_arrows_rounded, color: Colors.indigo),
+                ),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('So sánh thu nhập', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                      Text(
+                        'So sánh tuần, tháng hoặc năm với một kỳ khác',
+                        style: TextStyle(color: _muted, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: _muted),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+class MonthPickerDialog extends StatefulWidget {
+  const MonthPickerDialog({super.key, required this.initial});
+  final DateTime initial;
+
+  @override
+  State<MonthPickerDialog> createState() => _MonthPickerDialogState();
+}
+
+class _MonthPickerDialogState extends State<MonthPickerDialog> {
+  late int _year = widget.initial.year;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxYear = DateTime.now().year + 2;
+    return AlertDialog(
+      title: Row(
+        children: [
+          IconButton(
+            onPressed: _year > 2020 ? () => setState(() => _year--) : null,
+            icon: const Icon(Icons.chevron_left_rounded),
+          ),
+          Expanded(child: Center(child: Text('$_year'))),
+          IconButton(
+            onPressed: _year < maxYear ? () => setState(() => _year++) : null,
+            icon: const Icon(Icons.chevron_right_rounded),
+          ),
+        ],
+      ),
+      content: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (var m = 1; m <= 12; m++)
+            ChoiceChip(
+              label: Text(_monthShort[m - 1]),
+              selected: _year == widget.initial.year && m == widget.initial.month,
+              onSelected: (_) => Navigator.pop(context, DateTime(_year, m)),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
+      ],
+    );
+  }
+}
+
+class YearPickerDialog extends StatelessWidget {
+  const YearPickerDialog({super.key, required this.initial});
+  final DateTime initial;
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Năm'),
+        content: SizedBox(
+          width: 300,
+          height: 300,
+          child: YearPicker(
+            firstDate: DateTime(2020),
+            lastDate: DateTime(DateTime.now().year + 2),
+            selectedDate: initial,
+            onChanged: (d) => Navigator.pop(context, DateTime(d.year)),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
+        ],
+      );
+}
+
+class _PeriodButton extends StatelessWidget {
+  const _PeriodButton({required this.tag, required this.color, required this.title, required this.onTap});
+  final String tag, title;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 4,
+              children: [
+                Row(
+                  spacing: 6,
+                  children: [
+                    Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                    Text(tag, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12)),
+                  ],
+                ),
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+String _dHours(double a, double b) {
+  final m = ((a - b) * 60).round();
+  if (m == 0) return '0h00';
+  return '${m > 0 ? '+' : '-'}${fmtHours(m.abs() / 60)}';
+}
+
+String _dMoney(double a, double b) {
+  final d = a - b;
+  if (d.abs() < 0.005) return money(0);
+  return '${d > 0 ? '+' : '-'}${money(d.abs())}';
+}
+
+String _dPct(double a, double b) {
+  if (b.abs() < 0.005) return a.abs() < 0.005 ? '' : '—';
+  return '${a >= b ? '+' : '-'}${((a - b).abs() / b * 100).toStringAsFixed(1)}%';
+}
+
+Color _dColor(double d) => d > 0.0001 ? Colors.green.shade700 : (d < -0.0001 ? Colors.red.shade700 : _muted);
+
+class ComparePage extends StatefulWidget {
+  const ComparePage({super.key, required this.c});
+  final AppController c;
+
+  @override
+  State<ComparePage> createState() => _ComparePageState();
+}
+
+class _ComparePageState extends State<ComparePage> {
+  CompareKind _kind = CompareKind.month;
+  DateTime _a = DateTime.now();
+  DateTime _b = shiftPeriod(CompareKind.month, DateTime.now(), -1);
+
+  void _setKind(CompareKind k) {
+    final now = DateTime.now();
+    setState(() {
+      _kind = k;
+      _a = now;
+      _b = shiftPeriod(k, now, -1);
+    });
+  }
+
+  Future<DateTime?> _choose(DateTime current) {
+    switch (_kind) {
+      case CompareKind.week:
+        return showDatePicker(
+          context: context,
+          initialDate: current,
+          firstDate: DateTime(2020),
+          lastDate: DateTime(DateTime.now().year + 2, 12, 31),
+          helpText: tr('Chọn một ngày trong tuần cần xem'),
+        );
+      case CompareKind.month:
+        return showDialog<DateTime>(context: context, builder: (_) => MonthPickerDialog(initial: current));
+      case CompareKind.year:
+        return showDialog<DateTime>(context: context, builder: (_) => YearPickerDialog(initial: current));
+    }
+  }
+
+  Future<void> _pick(bool isA) async {
+    final d = await _choose(isA ? _a : _b);
+    if (d == null || !mounted) return;
+    setState(() {
+      if (isA) {
+        _a = d;
+      } else {
+        _b = d;
+      }
+    });
+  }
+
+  Widget _bar(String tag, double value, double max, Color color) => Row(
+        spacing: 8,
+        children: [
+          SizedBox(width: 18, child: Text(tag, style: TextStyle(color: color, fontWeight: FontWeight.w700))),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: max <= 0 ? 0 : (value / max).clamp(0.0, 1.0),
+                minHeight: 12,
+                color: color,
+                backgroundColor: const Color(0xFFE2E8F0),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 84,
+            child: Text(money(value), textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      );
+
+  Widget _row(String label, String a, String b, String delta, Color deltaColor, {bool strong = false, String sub = ''}) {
+    final style = TextStyle(fontWeight: strong ? FontWeight.w700 : FontWeight.w500, fontSize: strong ? 14 : 13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(flex: 5, child: Text(label, style: TextStyle(color: _muted, fontSize: strong ? 14 : 13))),
+          Expanded(flex: 5, child: Text(a, textAlign: TextAlign.right, style: style)),
+          Expanded(flex: 5, child: Text(b, textAlign: TextAlign.right, style: style)),
+          Expanded(
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(delta, style: style.copyWith(color: deltaColor)),
+                if (sub.isNotEmpty) Text(sub, style: TextStyle(fontSize: 11, color: deltaColor)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: widget.c,
+        builder: (context, _) {
+          final rs = widget.c.records;
+          final ba = periodBounds(_kind, _a);
+          final bb = periodBounds(_kind, _b);
+          final sa = summarize(rs, ba.$1, ba.$2);
+          final sb = summarize(rs, bb.$1, bb.$2);
+          const colorA = _tealMid;
+          const colorB = Colors.indigo;
+          final same = ba.$1 == bb.$1;
+          final maxPay = math.max(sa.earned, sb.earned);
+
+          return Scaffold(
+            appBar: AppBar(title: const Text('So sánh thu nhập')),
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
+              children: [
+                SegmentedButton<CompareKind>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: CompareKind.week, label: Text('Tuần')),
+                    ButtonSegment(value: CompareKind.month, label: Text('Tháng')),
+                    ButtonSegment(value: CompareKind.year, label: Text('Năm')),
+                  ],
+                  selected: {_kind},
+                  onSelectionChanged: (v) => _setKind(v.first),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  spacing: 8,
+                  children: [
+                    Expanded(
+                      child: _PeriodButton(
+                        tag: 'Kỳ A',
+                        color: colorA,
+                        title: periodTitle(_kind, _a),
+                        onTap: () => _pick(true),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: tr('Đổi chỗ hai kỳ'),
+                      onPressed: () => setState(() {
+                        final t = _a;
+                        _a = _b;
+                        _b = t;
+                      }),
+                      icon: const Icon(Icons.swap_horiz_rounded),
+                    ),
+                    Expanded(
+                      child: _PeriodButton(
+                        tag: 'Kỳ B',
+                        color: colorB,
+                        title: periodTitle(_kind, _b),
+                        onTap: () => _pick(false),
+                      ),
+                    ),
+                  ],
+                ),
+                if (same)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Hai kỳ đang giống nhau, hãy chọn kỳ khác để so sánh.',
+                      style: TextStyle(color: _muted, fontSize: 12),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _bar('A', sa.earned, maxPay, colorA),
+                        const SizedBox(height: 8),
+                        _bar('B', sb.earned, maxPay, colorB),
+                        const Divider(height: 24),
+                        Row(
+                          children: [
+                            const Spacer(flex: 5),
+                            Expanded(
+                              flex: 5,
+                              child: Text('Kỳ A',
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(color: colorA, fontWeight: FontWeight.w700, fontSize: 12)),
+                            ),
+                            Expanded(
+                              flex: 5,
+                              child: Text('Kỳ B',
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(color: colorB, fontWeight: FontWeight.w700, fontSize: 12)),
+                            ),
+                            const Expanded(
+                              flex: 5,
+                              child: Text('Chênh lệch',
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(color: _muted, fontWeight: FontWeight.w700, fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                        _row('Lương', money(sa.earned), money(sb.earned), _dMoney(sa.earned, sb.earned),
+                            _dColor(sa.earned - sb.earned),
+                            strong: true, sub: _dPct(sa.earned, sb.earned)),
+                        _row('Tổng giờ', fmtHours(sa.total), fmtHours(sb.total), _dHours(sa.total, sb.total),
+                            _dColor(sa.total - sb.total)),
+                        _row('Thường', fmtHours(sa.regular), fmtHours(sb.regular), _dHours(sa.regular, sb.regular),
+                            _dColor(sa.regular - sb.regular)),
+                        _row('OT x1.5', fmtHours(sa.ot), fmtHours(sb.ot), _dHours(sa.ot, sb.ot),
+                            _dColor(sa.ot - sb.ot)),
+                        _row('x2', fmtHours(sa.dbl), fmtHours(sb.dbl), _dHours(sa.dbl, sb.dbl),
+                            _dColor(sa.dbl - sb.dbl)),
+                        _row('Số ca', '${sa.shifts}', '${sb.shifts}',
+                            '${sa.shifts - sb.shifts > 0 ? '+' : ''}${sa.shifts - sb.shifts}',
+                            _dColor((sa.shifts - sb.shifts).toDouble())),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+}
+
 class SettingsDialog extends StatefulWidget {
   const SettingsDialog({super.key, required this.initial});
   final AppSettings initial;
@@ -4053,7 +5437,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     }
     Navigator.pop(
       context,
-      (settings: AppSettings(hourlyRate: rate, holidays: _holidays, lang: _lang), then: next),
+      (settings: widget.initial.copyWith(hourlyRate: rate, holidays: _holidays, lang: _lang), then: next),
     );
   }
 
@@ -4118,6 +5502,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
               icon: Icons.lock_outline_rounded,
               title: 'Bảo mật & mật khẩu',
               onTap: () => _finish(SettingsNext.security),
+            ),
+            _NavTile(
+              icon: Icons.alarm_rounded,
+              title: 'Nhắc giờ vào ca / ra ca',
+              onTap: () => _finish(SettingsNext.reminders),
             ),
             _NavTile(
               icon: Icons.backup_outlined,
